@@ -1,0 +1,276 @@
+CUSTOMER INTENT CLASSIFICATION - RUN REPORT
+==========================================
+
+Generated: 2026-11-09
+Notebook: intent_classification.ipynb (executed end-to-end)
+Random seed: 42
+Status: COMPLETE - all notebook cells ran successfully with no errors.
+
+Dataset:
+  bitext/Bitext-customer-support-llm-chatbot-training-dataset
+  https://huggingface.co/datasets/bitext/Bitext-customer-support-llm-chatbot-training-dataset
+
+Environment:
+  Python 3.12.10
+  datasets 4.8.5
+  pandas 2.3.3
+  numpy 2.5.4
+  scikit-learn 1.9.1
+  matplotlib 3.11.2
+  seaborn 0.13.2
+
+Execution command:
+  jupyter nbconvert --to notebook --execute --inplace intent_classification.ipynb
+
+
+1. DATASET CONFIRMATION
+-----------------------
+
+The requested Hugging Face dataset loaded successfully with:
+
+  from datasets import load_dataset
+  ds = load_dataset("bitext/Bitext-customer-support-llm-chatbot-training-dataset")
+
+Confirmed properties:
+  Splits:            train (single split)
+  Rows:              26,872
+  Intents:           27
+  Columns:           flags, instruction, category, intent, response
+  Language:          English
+  Label type:        hybrid-synthetic customer support messages
+
+The six intents selected for this case study are all present:
+  complaint, contact_human_agent, payment_issue, get_refund,
+  cancel_order, check_payment_methods
+
+Only "instruction" is used as the model feature and "intent" as the label.
+"response" is intentionally excluded because it represents an answer and
+could leak information unavailable when a customer message first arrives.
+
+
+2. DATA PREPARATION
+-------------------
+
+Rows for the six selected intents:          5,992
+Missing values (instruction, intent):       0
+Empty messages after stripping:             0
+Duplicate normalized messages:              683
+Texts appearing under multiple labels:      0
+Final unique labeled messages:              5,309
+
+Final class counts:
+  complaint                997
+  check_payment_methods    993
+  payment_issue            993
+  contact_human_agent      979
+  get_refund               911
+  cancel_order             436
+
+Normalization for deduplication lowercases text and collapses whitespace.
+Duplicates were removed before splitting to prevent identical messages from
+leaking across train, validation and test sets.
+
+
+3. DATA SPLIT
+-------------
+
+Stratified 70% / 15% / 15% split:
+  Train:       3,716
+  Validation:    796
+  Test:          797
+
+The notebook asserts that no normalized message occurs in more than one split.
+
+
+4. MODEL COMPARISON (VALIDATION SET)
+------------------------------------
+
+Model                          Validation accuracy   Validation macro-F1
+  TF-IDF + Naive Bayes                 0.9987               0.9989
+  TF-IDF + Logistic Regression         0.9987               0.9989
+  Dummy (most frequent)                0.1872               0.0526
+
+Selected model: TF-IDF + Multinomial Naive Bayes
+
+Naive Bayes and Logistic Regression are tied at four decimal places. After
+sorting by validation macro-F1, the notebook selects the first candidate row,
+which is Naive Bayes. Model selection used only the validation set; the test
+set was not used for tuning or selection.
+
+Both candidate models use a scikit-learn Pipeline:
+  TF-IDF (word 1-2 grams, min_df=2, max_features=25,000)
+  followed by the classifier.
+
+Because TF-IDF is inside the pipeline, it is fitted only on the training split.
+
+
+5. FINAL HELD-OUT TEST RESULTS
+------------------------------
+
+Selected model:  TF-IDF + Multinomial Naive Bayes
+Test accuracy:   0.9962
+Test macro-F1:   0.9959
+Test errors:     3 of 797 messages (0.38%)
+
+Per-class classification report:
+
+  Intent                    Precision   Recall   F1-score   Support
+  complaint                    0.99      1.00      1.00       150
+  contact_human_agent          1.00      0.99      1.00       147
+  payment_issue                1.00      0.99      0.99       149
+  get_refund                   1.00      1.00      1.00       137
+  cancel_order                 0.98      1.00      0.99        65
+  check_payment_methods        0.99      1.00      1.00       149
+
+  Accuracy                                        1.00       797
+  Macro average                1.00      1.00      1.00       797
+  Weighted average             1.00      1.00      1.00       797
+
+Note: the printed per-class values are rounded to two decimals. The exact
+test accuracy is 0.9962 and the exact macro-F1 is 0.9959.
+
+
+6. CONFUSION MATRIX (TEST SET)
+------------------------------
+
+Rows are actual intents; columns are predicted intents.
+
+Actual \ Predicted          complaint  human  payment  refund  cancel  methods
+  complaint                      150      0        0       0       0        0
+  contact_human_agent              1    146        0       0       0        0
+  payment_issue                    0      0      147       0       1        1
+  get_refund                       0      0        0     137       0        0
+  cancel_order                     0      0        0       0      65        0
+  check_payment_methods            0      0        0       0       0      149
+
+Column key: human = contact_human_agent, payment = payment_issue,
+            refund = get_refund, cancel = cancel_order,
+            methods = check_payment_methods.
+
+The matrix is also saved as figures/confusion_matrix.png.
+
+
+7. ERROR ANALYSIS
+-----------------
+
+All three test errors:
+
+  Actual intent          Predicted intent        Message
+  payment_issue          check_payment_methods   payment help
+  payment_issue          cancel_order            i have an question about the payment
+  contact_human_agent    complaint               contactingassistant
+
+Confusion counts:
+  contact_human_agent -> complaint              1
+  payment_issue       -> cancel_order           1
+  payment_issue       -> check_payment_methods  1
+
+Qualitative observations:
+  - Errors involve very short or underspecified messages with little context.
+  - "payment help" is ambiguous between reporting a payment problem and asking
+    about payment methods.
+  - "contactingassistant" is a one-token, malformed-style message.
+  - A request for a human agent being labeled "complaint" is operationally
+    important; human-handoff signals should be handled conservatively.
+
+For routing, these cases argue for human review or a clarification prompt
+rather than automatic action when confidence is low or the message is short.
+
+
+8. ILLUSTRATIVE PREDICTIONS
+---------------------------
+
+These are hand-written demonstration messages, not client data. Probabilities
+are uncalibrated model scores and must not be used as a production policy.
+
+  Message                                             Predicted intent       Max score
+  I want to talk to a real person, please.            contact_human_agent       0.986
+  My card keeps getting declined when I try to pay.   payment_issue             0.365
+  What payment methods do you accept?                 check_payment_methods     0.994
+  I'd like to request a refund for my order.          get_refund                0.959
+  Please cancel my order.                             cancel_order              0.889
+  I want to file a complaint about the service.       complaint                 0.936
+  Can I book a facial appointment for Saturday?       get_refund                0.741  (out of scope)
+
+The out-of-scope booking message is still forced into one of the six known
+classes, which illustrates why an out-of-scope / human-review path is needed.
+
+
+9. MODEL INTERPRETABILITY (TOP NAIVE BAYES FEATURES)
+-----------------------------------------------------
+
+Strongest TF-IDF features per class (log-probability ranking):
+
+  cancel_order:          order, order number, number, cancel, purchase order,
+                         to cancel
+  check_payment_methods: payment, methods, payment methods, options,
+                         payment options, modalities, payment modalities
+  complaint:             against, claim, against your, complaint, file,
+                         reclamation
+  contact_human_agent:   agent, speak, talk, to speak, with
+  get_refund:            money, my money, of my, of money, refund
+  payment_issue:         payment, payments, online, with online, report,
+                         with payment
+
+These word and bigram cues are intuitive for the six selected intents. They
+also indicate that the dataset contains highly regular synthetic templates,
+which helps explain the near-perfect scores.
+
+
+10. INTERPRETATION
+------------------
+
+What the results suggest:
+  - Simple, interpretable TF-IDF models can separate these six synthetic
+    customer-support intents almost perfectly in this benchmark.
+  - The task is learnable from lexical cues alone; no transformer model is
+    required to reproduce this result on this dataset.
+  - The realistic operational value is in routing suggestions, not autonomous
+    decisions.
+
+What the results do NOT establish:
+  - Production accuracy on real customer messages.
+  - Performance on Indonesian, WhatsApp, or clinic-specific conversations.
+  - Reliable confidence estimates for threshold-based automation.
+  - Detection of out-of-scope or multiple-intent messages.
+
+Recommended human-review cases:
+  - Requests for a human agent (must not be buried as complaints).
+  - Ambiguous payment messages and short messages with little context.
+  - Out-of-scope topics such as appointment booking, treatment questions,
+    symptom reports, or adverse events.
+  - Any low-confidence prediction after proper probability calibration.
+
+
+11. LIMITATIONS
+---------------
+
+1. Domain shift: the dataset is synthetic English customer-support text, not
+   real Indonesian aesthetic-clinic messages.
+2. Missing classes: booking, treatment/pricing enquiries, symptom reports and
+   multi-intent or unknown messages are outside the taxonomy.
+3. Safety: the classifier must never auto-reply to clinical symptom or
+   adverse-event messages; independent safety and escalation rules are needed.
+4. Confidence calibration: the reported maximum class probabilities are not
+   calibrated and are shown for exploration only.
+5. Template similarity: exact deduplication was performed, but near-duplicate
+   synthetic templates can still inflate random-split scores.
+6. Tie handling: Naive Bayes and Logistic Regression tie on validation macro-F1
+   at four decimals; the selection is deterministic but not a meaningful
+   performance difference.
+
+Recommended next step: obtain permitted, de-identified real-world messages,
+define a business-specific intent taxonomy, annotate a held-out evaluation set
+with quality checks, and evaluate routing with human oversight.
+
+
+12. ARTIFACTS
+-------------
+
+  intent_classification.ipynb   Executed notebook with all outputs
+  report.txt                    This report
+  figures/intent_distribution.png
+  figures/confusion_matrix.png
+
+All notebook cells executed successfully from top to bottom. The notebook is
+deterministic for the fixed seed and cached dataset.
