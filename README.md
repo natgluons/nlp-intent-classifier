@@ -1,4 +1,4 @@
-# Customer Intent Classification for AI-Powered Support
+# Customer Intent Classification with NLP
 
 Open-source data science project for Reylo AI.
 
