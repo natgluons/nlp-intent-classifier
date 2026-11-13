@@ -1,8 +1,6 @@
 # Customer Intent Classification with NLP
 
-Open-source data science project for Reylo AI.
-
-This project tests whether simple, interpretable NLP models can classify customer support messages into common intents and what their mistakes reveal about message routing.
+Open-source data science project. This project tests whether simple, interpretable NLP models can classify customer support messages into common intents and what their mistakes reveal about message routing.
 
 ## Scope
 
